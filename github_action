@@ -1,0 +1,30 @@
+#!/usr/bin/bash
+
+git_folder = "sym_gef"
+git_url = "https://github.com/phu14ss0/gef.git"
+
+mkdir ./copy
+touch ./copy/test.txt
+
+cd ../
+rm -rf $git_folder
+
+git clone $git_url
+mv gef $git_folder
+
+git remote add upstream $git_url
+
+cp -f ./Symbolic_plugin/copy/* ./$git_folder
+rm -rf ./Symbolic_plugin/copy
+
+cd $git_folder
+git branch greedun
+git checkout greedun
+
+#git add .
+#git commit -m "주석"
+#git push upstream greedun
+
+# 수작업
+# github에서 pull request요청
+# next step : merge request
