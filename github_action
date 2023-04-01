@@ -1,29 +1,26 @@
 #!/usr/bin/bash
 
-git_folder = "sym_gef"
-git_url = "https://github.com/phu14ss0/gef.git"
-
-mkdir ./copy
-touch ./copy/test.txt
+#git_folder = "sym_gef"
+#git_url = "https://github.com/phu14ss0/gef.git"
 
 cd ../
-rm -rf $git_folder
+rm -rf sym_gef
 
-git clone $git_url
-mv gef $git_folder
+git clone https://github.com/phu14ss0/gef.git
+mv gef sym_gef
 
-git remote add upstream $git_url
+git remote add upstream https://github.com/phu14ss0/gef.git
 
-cp -f ./Symbolic_plugin/copy/* ./$git_folder
+cp -f ./Symbolic_plugin/copy/* ./sym_gef
 rm -rf ./Symbolic_plugin/copy
 
-cd $git_folder
+cd sym_gef
 git branch greedun
 git checkout greedun
 
-#git add .
-#git commit -m "주석"
-#git push upstream greedun
+git add .
+git commit -m "thinking algorithm that register taint analysis"
+git push upstream greedun
 
 # 수작업
 # github에서 pull request요청
