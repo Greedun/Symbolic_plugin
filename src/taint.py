@@ -13,6 +13,7 @@ def import_or_install(package):
     import capstone
 
 # cs_assembly -> gef_to_cs_arch
+# 아키텍처에 따른 모드 값 반환
 def gef_to_cs_arch() -> Tuple[str, str, str]:
     if gef.arch.arch == "ARM":
         if isinstance(gef.arch, ARM):
@@ -104,33 +105,76 @@ def confirm_inst(insn):
     print(f"size : {insn.size}")
     print()
 
-
 class Taint_Reg(GenericCommand):
     """Dummy new command."""
     _cmdline_ = "TaintReg"
-    _syntax_  = f"{_cmdline_}"
+    _syntax_  = f"{_cmdline_} [location] [--set] [--monitor] [--print] [--clear]"
     
-    
+    # location 지정 없을때 $pc에 있는 레지스터 / location 지정 있을때 location에 있는 레지스터
     @only_if_gdb_running         # not required, ensures that the debug session is started
-    @parse_arguments({("location"): "$pc"}, {("--show-opcodes", "-s"): True, "--length": 0}) # kwarg사용시 필요
+    @parse_arguments({("location"):"$pc"},{"--set": "", "--monitor": True, "--print": True, "--clear": True}) # kwarg사용시 필요, --???시 True로 초기화됨
     def do_invoke(self, _: List[str], **kwargs: Any) -> None:
-        import_or_install("capstone")
+        # 1. module없을 경우 자동 설치
+        import_or_install("capstone") 
         
+        # 2. args 값 가져오는 것
         args = kwargs["arguments"]
+        print(args)
+        
+        sys.exit()
+        
+        # 3. 입력한 location과 REG가 해당 범위를 벗어나지 않는지 체크
+        
+        # (+) 추가기능 : --monitor, --print, --clear같은 기능들은 주요 기능 실행 전에 여기서 체크후 기능실행
+        
+        # 4. length 필수인데 입력하는게 아닌 자동으로 수집 해야함 -> CS에서 쓰임
         length = args.length or gef.config["context.nb_lines_code"] # or : bit연산자 , config : 6
         location = parse_address(args.location) #int값 반환
+        code_section = []
         
-        # 주소 여부 확인
+        '''
+        # 코드영역 주소 추출하는 코드(임시)
+        def export_location_opcode_value():
+            vmmap = gef.memory.maps
+            if not vmmap:
+                err("No address mapping information found")
+                return
+
+            #print(f"start\t\tend\t\toffset\t\tperm\t\tPath")
+            # code영역 주소 추출
+            for entry in vmmap:
+                if "/usr/lib/x86_64-linux-gnu/libc.so.6" in entry.path:
+                    break
+                l = [hex(entry.page_start),hex(entry.page_end),hex(entry.offset),str(entry.permission),str(entry.path)]
+                code_section.append(l)
+                del l
+                #print(f"{hex(entry.page_start)}\t{hex(entry.page_end)}\t{hex(entry.offset)}\t\t{entry.permission}\t\t{entry.path}")
+            start_codeaddr = code_section[0][0] # 시작
+            end_codeaddr = code_section[len(code_section)-1][1] #마지막
+            
+
+            #color = gef.config["theme.table_heading"]
+            #headers = ["Start", "End", "Offset", "Perm", "Path"]
+            #gef_print(Color.colorify("{:<{w}s}{:<{w}s}{:<{w}s}{:<4s} {:s}".format(*headers, w=gef.arch.ptrsize*2+3), color))
+        
+        export_location_opcode_value()
+        '''
+        
+        # 주소 여부 확인 -> 3번으로 추후 옮김
         if not location:
             info(f"Can't find address for {args.location}")
             return
         
-        insns = [] # 의문의 클래스로 들어감
+        # 5. 디스어셈블리
+        insns = [] # INSTRUCTION 클래스가 들어감
         opcodes_len = 0
-        for insn in cs_disassemble(location, length, skip=length * self.repeat_count, **kwargs):
+        for insn in cs_disassemble(location, length, skip=length * self.repeat_count, **kwargs): # DISASSEMBLY 핵심
             insns.append(insn)
             opcodes_len = max(opcodes_len, len(insn.opcodes)) # ?
         # confirm_inst(insns[0])
+        
+        # 6. 쓰레드 백그라운드로 매번 확인후 $PC가 바뀌었을때 오염검사 진행
+        # => 오염이 됬다면 GEF_PRINTR같은것으로 자동 호출
         
         # let's say we want to print some info about the architecture of the current binary
         print(f"gef.arch={gef.arch}")
@@ -178,4 +222,17 @@ elf 분석 라이브러리 : pylibelf(X)
 
 (+) 설정한 값 초기화하는 기능
 (+) 현재 진행중인 오염 상황을 출력하는 기능
+'''
+
+'''
+[추가 기능]
+—set “레지스터” => 오염될 레지스터 설정
+<기본값 : None>
+
+—monitor True=> 오염이 발생될 때 gef_print, gef_info발생 (백그라운드로 계속 확인) / False는 종료
+=> 쓰레드로 돌릴 예정
+
+—print => 오염된 사양 다 출력
+
+—clear => 기존에 오염과 지정한 레지스터 다 삭제
 '''
