@@ -1,4 +1,6 @@
 import importlib
+import os
+import sys
 
 # 모듈이 없을 경우 자동으로 설치후 import
 def import_or_install(package):
@@ -94,6 +96,28 @@ def cs_disassemble(location: int, nb_insn: int, **kwargs: Any) -> Generator[Inst
             break
     return
 
+
+# 코드영역 주소 추출하는 코드(임시)
+def export_location_opcode_value():
+    code_section = []
+    vmmap = gef.memory.maps
+    if not vmmap:
+        err("No address mapping information found")
+        return
+
+    #print(f"start\t\tend\t\toffset\t\tperm\t\tPath")
+    # code영역 주소 추출
+    for entry in vmmap:
+        if "/usr/lib/x86_64-linux-gnu/libc.so.6" in entry.path:
+            break
+        l = [hex(entry.page_start),hex(entry.page_end),hex(entry.offset),str(entry.permission),str(entry.path)]
+        code_section.append(l)
+        del l
+        #print(f"{hex(entry.page_start)}\t{hex(entry.page_end)}\t{hex(entry.offset)}\t\t{entry.permission}\t\t{entry.path}")
+    start_codeaddr = code_section[0][0] # 시작
+    end_codeaddr = code_section[len(code_section)-1][1] #마지막
+    return [start_codeaddr,end_codeaddr]
+
 # insn내부 값 확인 용도
 def confirm_inst(insn):
     print(f"Address : {hex(insn.address)}")
@@ -105,83 +129,184 @@ def confirm_inst(insn):
     print(f"size : {insn.size}")
     print()
 
+def check_location(location):
+    code_section = export_location_opcode_value() # 코드 영역 경계(리스트)
+    code_start = int(code_section[0],16)
+    code_end = int(code_section[1],16)
+    
+    if location < code_start and location > code_end:
+        return False
+    
+    return True
+
+def check_flag(list_flag):
+    # print : location의 기본 기능
+    # [monitor_flag, set_flag, clear_flag] - 4, 2, 1
+    # 순위 : clear -> set -> monitor
+    # clear => TaintReg --clear
+    # set => TaintReg location($pc) --set Reg
+    # monitor => TaintReg --monitor
+    status = ""
+    if list_flag[0] == True: # monitor
+        status += "1"
+    else:
+        status += "0"
+    
+    if list_flag[1] != "": # set
+        status += "1"
+    else:
+        status += "0"
+    
+    if list_flag[2] == True: # clear
+        status += "1"
+    else:
+        status += "0"
+    
+    return status
+
+# 기능별 함수 구분
+def function_set(location, list_result_ds, set_flag):
+    # 지정한 REG가 현재 혹은 지정한 location에 있는지 확인하는 작업
+    # 디스어셈블리 -----------------------
+    insns = [] # INSTRUCTION 클래스가 들어감
+    opcodes_len = 0
+    length = 1
+    for insn in list_result_ds: # DISASSEMBLY 핵심
+        insns.append(insn)
+        opcodes_len = max(opcodes_len, len(insn.opcodes)) # ?
+    
+    show_opcodes = True
+    insn = insns[0]
+    dict_insn = {}
+    dict_key = ['addr','opcode','location','inst','semantic']
+    dict_insn['semantic'] = []
+    
+    insn_fmt = f"{{:{opcodes_len}o}}" if show_opcodes else "{}"
+    text_insn = insn_fmt.format(insn)
+    list_insn = list(filter(lambda x: x!='',text_insn.split(" "))) # ''는 리스트에서 필터링처리
+    for i in range(len(list_insn)):
+        if i < 4:
+            dict_insn[dict_key[i]]=list_insn[i]
+        else:
+            list_insn[i] = list_insn[i].replace(',','')
+            dict_insn['semantic'].append(list_insn[i])
+
+    # ----------
+    exist_REG = 0 # 해당 주소에 REG확인하는 변수
+    # set할 레지스터에 있는지 확인
+    for semantic in dict_insn['semantic']:
+        if semantic == set_flag.lower():
+            exist_REG += 1
+
+    if exist_REG == 0:
+        gef_print("[!] 오염시킬 주소에 해당 레지스터는 존재하지 않습니다.")
+        return
+    
+    taint_REG = set_flag
+    print("test")
+    
+    return
+
+def function_clear():
+    total_taint = []
+    taint_REG = None
+    
+    return
+
+def function_monitoring():
+    
+    return
+
+# taint_progress파일 관련
+def check_taint_progress():
+    if not os.path.exists("taint_progress"):
+        open("taint_progress", 'w')
+        
+        # Frame을 해당 파일에 적기(json형태)
+        
+        gef_print("[+] Create 'taint_progress' file")
+
+# 코드 마무리시 여태까지 기록을 업데이트하는 기능
+def finish_taint_progress():
+    pass
+    
+# -------------------------
+
+# (1) hook을 통해 gdb가 bp될때마다 실행되게 하는 방법을 찾아서 먼저 시도 예정
+# (2) (gdb내부에서 자동실행 안될경우) 내부 진행사항이 유지가 안되기 때문에 "taint_progress"란 파일을 토대로 진행되게 할 것
 class Taint_Reg(GenericCommand):
+    
     """Dummy new command."""
     _cmdline_ = "TaintReg"
-    _syntax_  = f"{_cmdline_} [location] [--set] [--monitor] [--print] [--clear]"
+    _syntax_  = f"{_cmdline_} [location] [--set] [--monitor] [--clear]"
     
     # location 지정 없을때 $pc에 있는 레지스터 / location 지정 있을때 location에 있는 레지스터
-    @only_if_gdb_running         # not required, ensures that the debug session is started
-    @parse_arguments({("location"):"$pc"},{"--set": "", "--monitor": True, "--print": True, "--clear": True}) # kwarg사용시 필요, --???시 True로 초기화됨
+    @only_if_gdb_running
+    @parse_arguments({("location"):"$pc"},{"--set": "", "--monitor": True, "--clear": True}) # kwarg사용시 필요, --???시 True로 초기화됨
     def do_invoke(self, _: List[str], **kwargs: Any) -> None:
+
         # 1. module없을 경우 자동 설치
-        import_or_install("capstone") 
+        import_or_install("capstone")
         
         # 2. args 값 가져오는 것
         args = kwargs["arguments"]
-        print(args)
+        set_flag = args.set
+        monitor_flag = args.monitor
+        clear_flag = args.clear
+        list_flag = [monitor_flag, set_flag, clear_flag]
         
-        sys.exit()
+        # 3. check flag -> status
+        list_status = list(check_flag(list_flag))
         
-        # 3. 입력한 location과 REG가 해당 범위를 벗어나지 않는지 체크
+        # 4. location값 설정
+        if args.location == "$pc":
+            location = parse_address(args.location) # int값
+        else:
+            location = int(args.location,16)
         
-        # (+) 추가기능 : --monitor, --print, --clear같은 기능들은 주요 기능 실행 전에 여기서 체크후 기능실행
-        
-        # 4. length 필수인데 입력하는게 아닌 자동으로 수집 해야함 -> CS에서 쓰임
-        length = args.length or gef.config["context.nb_lines_code"] # or : bit연산자 , config : 6
-        location = parse_address(args.location) #int값 반환
-        code_section = []
-        
-        '''
-        # 코드영역 주소 추출하는 코드(임시)
-        def export_location_opcode_value():
-            vmmap = gef.memory.maps
-            if not vmmap:
-                err("No address mapping information found")
-                return
-
-            #print(f"start\t\tend\t\toffset\t\tperm\t\tPath")
-            # code영역 주소 추출
-            for entry in vmmap:
-                if "/usr/lib/x86_64-linux-gnu/libc.so.6" in entry.path:
-                    break
-                l = [hex(entry.page_start),hex(entry.page_end),hex(entry.offset),str(entry.permission),str(entry.path)]
-                code_section.append(l)
-                del l
-                #print(f"{hex(entry.page_start)}\t{hex(entry.page_end)}\t{hex(entry.offset)}\t\t{entry.permission}\t\t{entry.path}")
-            start_codeaddr = code_section[0][0] # 시작
-            end_codeaddr = code_section[len(code_section)-1][1] #마지막
+        # 3-1. location 검증
+        if check_location(location): #location범위 확인하는 함수
+            # 기록할 파일 존재여부 확인후 생성
+            check_taint_progress()
             
-
-            #color = gef.config["theme.table_heading"]
-            #headers = ["Start", "End", "Offset", "Perm", "Path"]
-            #gef_print(Color.colorify("{:<{w}s}{:<{w}s}{:<{w}s}{:<4s} {:s}".format(*headers, w=gef.arch.ptrsize*2+3), color))
-        
-        export_location_opcode_value()
-        '''
-        
-        # 주소 여부 확인 -> 3번으로 추후 옮김
-        if not location:
-            info(f"Can't find address for {args.location}")
+            # "taint_progress"란 파일이 존재한다면 -> 진행사항 가져오기
+            # 없다면 새로 생성후 frame구축
+            
+            # 5. status 값에 따른 기능 수행
+            if list_status[0] == "1":
+                # clear 기능
+                # => 값에 대한 초기화 기능
+                # => 내부값을 유지할 방법이 없으니 "taint_progress"파일을 삭제하는 방법으로 대체
+                function_clear()
+            
+            if list_status[1] == "1":
+                # set 기능
+                insns = [] # INSTRUCTION 클래스가 들어감
+                opcodes_len = 0
+                length = 1
+                list_result_ds = cs_disassemble(location, length, skip=length * self.repeat_count, **kwargs) # DISASSEMBLY 핵심
+                
+                function_set(location, list_result_ds, set_flag)
+                
+                
+            if list_status[2] == "1":
+                # monitoring 기능
+                function_monitoring()
+            
+        else:
+            # code section 주소가 아닌 경우
+            gef_print("[!] Code Section 범위의 주소입니다.")
             return
         
-        # 5. 디스어셈블리
-        insns = [] # INSTRUCTION 클래스가 들어감
-        opcodes_len = 0
-        for insn in cs_disassemble(location, length, skip=length * self.repeat_count, **kwargs): # DISASSEMBLY 핵심
-            insns.append(insn)
-            opcodes_len = max(opcodes_len, len(insn.opcodes)) # ?
-        # confirm_inst(insns[0])
+        finish_taint_progress() # Last
         
+        return
+    
         # 6. 쓰레드 백그라운드로 매번 확인후 $PC가 바뀌었을때 오염검사 진행
         # => 오염이 됬다면 GEF_PRINTR같은것으로 자동 호출
+        # (+) 추가기능 : --monitor, --print, --clear같은 기능들은 주요 기능 실행 전에 여기서 체크후 기능실행
         
-        # let's say we want to print some info about the architecture of the current binary
-        print(f"gef.arch={gef.arch}")
-        # or showing the current $pc
-        print(f"gef.arch.pc={gef.arch.pc:#x}")
-        return
-
+    
 # 명령어 : clear용도
 class clear(GenericCommand):
     """Dummy new command."""
