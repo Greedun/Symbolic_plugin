@@ -1,6 +1,7 @@
 import os
 import sys
 import gdb
+import gef
 
 class load(GenericCommand):
     """Dummy new command."""
@@ -9,8 +10,12 @@ class load(GenericCommand):
     _syntax_ = f"{_cmdline_} [file_name]"
 
     @only_if_gdb_running
-    @parse_arguments({("file_name"):""},{}) # kwarg사용시 필요, --???시 True로 초기화됨
+    @parse_arguments({("file_name"):""}) # kwarg사용시 필요, --???시 True로 초기화됨
     def do_invoke(self, _: List[str], **kwargs: Any) -> None:
+        
+        gdb.execute("info function")
+        gef_print("test")
+        return
         
         # load할 파일을 무조건 지정해야함
         args = kwargs["arguments"]
@@ -23,8 +28,7 @@ class load(GenericCommand):
         else:
             if os.path.exists(set_file):
                 # file이 존재할 경우
-                command = "source " + set_file
-                gdb.execute(command)
+                open(set_file, 'w')
                 
             else:
                 # file이 없는 경우
@@ -33,4 +37,5 @@ class load(GenericCommand):
         
         return
 
+register_external_command(Taint_Reg())
 register_external_command(load())
