@@ -11,6 +11,15 @@ import inspect
 # 구조 : {'create_date': '', 'start_addr': '', 'set_REG': '', 'total_taint': []}
 global_taint_progress = {} # taint_progress에서 load
 
+# taint_progress의 값을 초기화(전역변수))
+def init_taint_progress():
+    global global_taint_progress
+    
+    global_taint_progress['create_date'] = ""
+    global_taint_progress['start_addr'] = ""
+    global_taint_progress['set_REG'] = ""
+    global_taint_progress['total_taint'] = []
+
 # 모듈이 없을 경우 자동으로 설치후 import
 def import_or_install(package):
     try:
@@ -173,125 +182,91 @@ def check_flag(list_flag):
     # print(status)
     return status
 
-# 기능별 함수 구분
-def function_set(location, list_result_ds, set_flag):
-    # 지정한 REG가 현재 혹은 지정한 location에 있는지 확인하는 작업
-    # 디스어셈블리 -----------------------
-    insns = [] # INSTRUCTION 클래스가 들어감
-    opcodes_len = 0
-    length = 1
-    for insn in list_result_ds: # DISASSEMBLY 핵심
-        insns.append(insn)
-        opcodes_len = max(opcodes_len, len(insn.opcodes)) # ?
-    
-    show_opcodes = True
-    insn = insns[0]
-    dict_insn = {}
-    dict_key = ['addr','opcode','location','inst','semantic']
-    dict_insn['semantic'] = []
-    
-    insn_fmt = f"{{:{opcodes_len}o}}" if show_opcodes else "{}"
-    text_insn = insn_fmt.format(insn)
-    list_insn = list(filter(lambda x: x!='',text_insn.split(" "))) # ''는 리스트에서 필터링처리
-    for i in range(len(list_insn)):
-        if i < 4:
-            dict_insn[dict_key[i]]=list_insn[i]
-        else:
-            list_insn[i] = list_insn[i].replace(',','')
-            dict_insn['semantic'].append(list_insn[i])
-
-    # ----------
-    exist_REG = 0 # 해당 주소에 REG확인하는 변수
-    # set할 레지스터에 있는지 확인
-    for semantic in dict_insn['semantic']:
-        if semantic == set_flag.lower():
-            exist_REG += 1
-
-    if exist_REG == 0:
-        gef_print("[!] 오염시킬 주소에 해당 레지스터는 존재하지 않습니다.")
-        return
-    
-    taint_REG = set_flag
-    
-    return
-
-def function_clear():
-    global global_taint_progress
-    # => 내부값을 유지할 방법이 없으니 "taint_progress"파일을 삭제후 다시 생성하여 초기화하는 방법
-    # "taint_progress"파일을 삭제후 다시 생성
-    if os.path.isfile("taint_progress"):
-        os.remove("taint_progress")
-        make_taint_progress()
-    else:
-        print("[!] taint_progress파일이 존재하지 않습니다.")
-    
-    return
-
-def confirm_register_function():
-    status = ''
-    # gdb.events.stop.connect(hook_stop)
+def createDirectory(directory):
     try:
-        gdb.events.stop.disconnect(hook_stop)
-        
-        # 내부에 등록된 함수가 있다는 뜻
-        gdb.events.stop.connect(hook_stop)
-        status = "on"
-        
-    except Exception as ex:
-        # 내부에 등록된 함수가 하나도 없다는 의미
-        status = "off"
-    
-    return status
+        if not os.path.exists(directory):
+            os.makedirs(directory)
+    except OSError:
+        print("Error: Failed to create the directory.")
 
-def function_monitoring():
-    # 메모 : connect할 때마다 함수가 추가되기 때문에
-    # 여러개 추가하면 같은 함수가 여러번 실행된다.
+# --------------------
     
-    # taint_progress파일에 있는 데이터 로드(json형태)
-    # load_taint_progress() # => 앞에 선수 조건으로 넣어서 필요없음
+class Taint_function:
+    # 코드 마무리시 여태까지 기록을 업데이트하는 기능
+    def finish_taint_progress(self):
+        global global_taint_progress
+        
+        with open("taint_progress", 'w') as f:
+            #print(global_taint_progress)
+            json.dump(global_taint_progress, f, indent=4)
+        return 
     
-    # monitoring 껐다 키는 기능
-    # (gdb.events.stop) on => connect / off => disconnect
-    #gdb.events.stop.disconnect(hook_stop))
-    # 메모 : connect함수 계속 추가 가능 / disconnect함수 없는데 호출시 예외 처리
-    # disconnect사용 -> 에러발생 => 등록된 함수가 없다는 것을 의미
-    # disconnect사용 -> 정상처리 => 등록된 함수가 하나 잇었다는 의미
-    
-    # callable : 호출 가능한 함수인지 확인하는 방법
-    #print(Callable[["gdb.StopEvent"], None])
-    
-    # 현재 hook_stop함수가 등록되어있는지 확인하는 함수
-    status = confirm_register_function()
-    
-    if status == "on":
-        print("[*] 모니터링 상태는 on입니다.")
-        print("[*] 모니터링 종료를 원하신다면 off를 입력해주세요")
-        sel = input(">> ")
-        if sel == "off":
-            gdb.events.stop.disconnect(hook_stop)
-            print()
-            gef_print("[*] 상태가 off로 변경되었습니다.")
+    # taint_progress파일 관련
+    def load_taint_progress(self):
+        global global_taint_progress
+        # (check) taint_progress파일이 있는지 확인 없다면 생성
+        if not os.path.exists("taint_progress"):
+            make_taint_progress()
+            
         else:
-            gef_print("[!] 잘못된 입력입니다. 모니터링은 on상태입니다.")
-    else:
-        # status : off 
-        print("[*] 모니터링 상태는 off입니다.")
-        print("[*] 모티너링 동작을 원한다면 on을 입력해주세요")
-        sel = input(">> ")
-        print()
-        if sel == "on":
-            gdb.events.stop.connect(hook_stop)
-            print()
-            gef_print("[*] 상태가 on으로 변경되었습니다.")
-        else:
-            gef_print("[!] 잘못된 입력입니다. 모니터링은 off상태입니다.")
-    
-    #gdb.execute("context")
+            # load
+            while True:
+                print("[*] taint_progress파일이 존재하여 다음 선택지 중 골라주세요.")
+                print("1. 기존 taint_progress를 load")
+                print("2. taint_progress파일 삭제후 새로 생성")
+                print("3. taint_progress파일 백업후 새로 생성")
+                confirm = int(input(">> "))
+                
+                if confirm != 1 or confirm != 2 or confirm != 3:
+                    break
+                else:
+                    print("[!] 잘못된 입력값 입니다.\n")
 
-def make_taint_progress():
-    # Frame을 해당 파일에 적기(json형태)
+            if confirm == 1:
+                # 기존 load
+                with open("./taint_progress") as f:
+                    global_taint_progress = json.load(f) # type : dict
+
+                # print(global_taint_progress)
+                
+            elif confirm == 2:
+                # 삭제후 생성
+                if os.path.isfile("taint_progress"):
+                    os.remove("taint_progress")
+                    make_taint_progress()
+                    
+                else:
+                    print("[!] taint_progress파일이 존재하지 않습니다.")
+
+            elif confirm == 3:
+                cur_path = os.getcwd() # 현재 경로
+                date = datetime.today().strftime("%Y.%m.%d-%H:%M:%S")
+                change_name = date + "_taint_progress"
+                
+                createDirectory("log") # 백업폴더(log)생성
+                
+                # Log폴더에 따로 기록
+                shutil.copyfile("./taint_progress","./log/"+change_name)
+                
+                # 기존 파일 삭제
+                os.remove("taint_progress")
+                
+                # progress파일 새로 생성
+                make_taint_progress()
+                
+                gef_print(f"{change_name} 파일로 백업되었습니다.")
+                
+            else:
+                # 잘못된 입력값
+                gef_print("[!] 잘못된 선택지 입니다.")
+            print()
+            
+    def make_taint_progress(self):
+        # Frame을 해당 파일에 적기(json형태)
+        create_date = datetime.today().strftime("%Y.%m.%d-%H:%M:%S")
+
         frame_taint_progress = {
-            "create_date" : "",
+            "create_date" : create_date,
             "start_addr" : "", # 오염 시작 지점(어셈블리어)
             "set_REG" : "", # 오염 내부 REG
             "total_taint" : [], #오염된 주소 수집 -> 내부형태 [주소, 어셈블리어, 오염부분]
@@ -302,82 +277,115 @@ def make_taint_progress():
             json.dump(frame_taint_progress, f, indent=4)
         
         gef_print("[+] Create 'taint_progress' file")
-    
 
-# taint_progress파일 관련
-def load_taint_progress():
-    global global_taint_progress
-    # (check) taint_progress파일이 있는지 확인 없다면 생성
-    if not os.path.exists("taint_progress"):
-        make_taint_progress()
+    # 기능별 함수 구분
+    def function_set(self, location, list_result_ds, set_flag):
+        global global_taint_progress
         
-    else:
-        # load
-        while True:
-            print("[*] taint_progress파일이 존재하여 다음 선택지 중 골라주세요.")
-            print("1. 기존 taint_progress를 load")
-            print("2. taint_progress파일 삭제후 새로 생성")
-            print("3. taint_progress파일 백업후 새로 생성")
-            confirm = int(input(">> "))
-            
-            if confirm != 1 or confirm != 2 or confirm != 3:
-                break
+        # 지정한 REG가 현재 혹은 지정한 location에 있는지 확인하는 작업
+        # "start_addr": "", "set_REG": ""만 설정
+        # 디스어셈블리 -----------------------
+        insns = [] # INSTRUCTION 클래스가 들어감
+        opcodes_len = 0
+        length = 1
+        for insn in list_result_ds: # DISASSEMBLY 핵심
+            insns.append(insn)
+            opcodes_len = max(opcodes_len, len(insn.opcodes)) # ?
+        
+        show_opcodes = True
+        insn = insns[0]
+        dict_insn = {}
+        dict_key = ['addr','opcode','location','inst','semantic']
+        dict_insn['semantic'] = []
+        
+        insn_fmt = f"{{:{opcodes_len}o}}" if show_opcodes else "{}"
+        text_insn = insn_fmt.format(insn)
+        list_insn = list(filter(lambda x: x!='',text_insn.split(" "))) # ''는 리스트에서 필터링처리
+        for i in range(len(list_insn)):
+            if i < 4:
+                dict_insn[dict_key[i]]=list_insn[i]
             else:
-                print("[!] 잘못된 입력값 입니다.\n")
+                list_insn[i] = list_insn[i].replace(',','')
+                dict_insn['semantic'].append(list_insn[i])
+        # print(dict_insn) # 주요 정보 모음
+        # ----------
+        
+        exist_REG = 0 # 해당 주소에 REG확인하는 변수
+        # set할 레지스터에 있는지 확인
+        for semantic in dict_insn['semantic']:
+            if semantic == set_flag.lower():
+                exist_REG += 1
 
-        if confirm == 1:
-            # 기존 load
-            with open("./taint_progress") as f:
-                global_taint_progress = json.load(f) # type : dict
-
-            # print(global_taint_progress)
-            
-        elif confirm == 2:
-            # 삭제후 생성
-            if os.path.isfile("taint_progress"):
+        if exist_REG == 0:
+            gef_print("[!] 오염시킬 주소에 해당 레지스터는 존재하지 않습니다.")
+            return
+        
+        # global_taint_값이 유무 확인
+        # 있다면 변경 여부 확인
+        # 변경한다면 => 백업 여부 확인후 값 변경 + [] 초기화
+        
+        if global_taint_progress['set_REG'] != "":
+            # 이미 설정된 값이 있다면 
+            # 1) 백업 여부 확인
+            print("[*] 기록된 taint_progress를 백업하실려면 Y를 입력해주세요")
+            sel = input(">> ")
+            if sel == "Y":
+                cur_path = os.getcwd() # 현재 경로
+                date = datetime.today().strftime("%Y.%m.%d-%H:%M:%S")
+                change_name = date + "_taint_progress"
+                
+                createDirectory("log") # 백업폴더(log)생성
+                
+                # Log폴더에 따로 기록
+                shutil.copyfile("./taint_progress","./log/"+change_name)
+                
+                # 기존 파일 삭제
                 os.remove("taint_progress")
+                
+                # progress파일 새로 생성
                 make_taint_progress()
                 
+                gef_print(f"{change_name} 파일로 백업되었습니다.")
             else:
-                print("[!] taint_progress파일이 존재하지 않습니다.")
+                print("[*] 값을 초기화 후 진행합니다.")
+                # 백업없이 값 초기화
+                init_taint_progress()
+            
+        # 설정된 값이 없는 경우
+        global_taint_progress['set_REG'] = set_flag
+        global_taint_progress['start_addr'] = dict_insn['addr']
+        global_taint_progress['total_taint'].append(dict_insn)
+        
+        self.finish_taint_progress() # Last
 
-        elif confirm == 3:
-            cur_path = os.getcwd() # 현재 경로
-            date = datetime.today().strftime("%Y.%m.%d-%H:%M:%S")
-            change_name = date + "_taint_progress"
-            
-            createDirectory("log") # 백업폴더(log)생성
-            
-            # Log폴더에 따로 기록
-            shutil.copyfile("./taint_progress","./log/"+change_name)
-            
-            # 기존 파일 삭제
+    def function_clear(self):
+        global global_taint_progress
+        # => 내부값을 유지할 방법이 없으니 "taint_progress"파일을 삭제후 다시 생성하여 초기화하는 방법
+        # "taint_progress"파일을 삭제후 다시 생성
+        if os.path.isfile("taint_progress"):
             os.remove("taint_progress")
-            
-            # progress파일 새로 생성
             make_taint_progress()
-            
-            gef_print(f"{change_name} 파일로 백업되었습니다.")
-            
         else:
-            # 잘못된 입력값
-            gef_print("[!] 잘못된 선택지 입니다.")
-        print()
+            print("[!] taint_progress파일이 존재하지 않습니다.")
+        
+        self.finish_taint_progress() # Last
 
+    def confirm_register_function(self):
+        status = ''
+        # gdb.events.stop.connect(hook_stop)
+        try:
+            gdb.events.stop.disconnect(hook_stop)
+            
+            # 내부에 등록된 함수가 있다는 뜻
+            gdb.events.stop.connect(hook_stop)
+            status = "on"
+            
+        except Exception as ex:
+            # 내부에 등록된 함수가 하나도 없다는 의미
+            status = "off"
+        
+        return status
 
-# 코드 마무리시 여태까지 기록을 업데이트하는 기능
-def finish_taint_progress():
-    pass
-
-def createDirectory(directory):
-    try:
-        if not os.path.exists(directory):
-            os.makedirs(directory)
-    except OSError:
-        print("Error: Failed to create the directory.")
-
-def hook_stop(event): # 멈출때마다 monitor동작 구현
-    print("test")
 
 # -------------------------
 
@@ -393,7 +401,92 @@ class Taint_Reg(GenericCommand):
     @only_if_gdb_running
     @parse_arguments({("location"):"$pc"},{"--set": "", "--monitor": True, "--clear": True}) # kwarg사용시 필요, --???시 True로 초기화됨
     def do_invoke(self, _: List[str], **kwargs: Any) -> None:
-
+        taint = Taint_function()
+        
+        def hook_stop(event): # 멈출때마다 monitor동작 구현
+            global global_taint_progress
+            taint_res = global_taint_progress['set_REG'] # 오염 시작 지점
+            
+            if args.location == "$pc":
+                location = parse_address(args.location) # int값
+            else:
+                location = int(args.location,16)
+                
+            if check_location(location): #location범위 확인하는 함수
+                
+                # set 기능
+                insns = [] # INSTRUCTION 클래스가 들어감
+                opcodes_len = 0
+                length = 1
+                
+                list_result_ds = cs_disassemble(location, length, skip=length * self.repeat_count, **kwargs) # DISASSEMBLY 핵심
+                
+                for insn in list_result_ds: # DISASSEMBLY 핵심
+                    insns.append(insn)
+                    opcodes_len = max(opcodes_len, len(insn.opcodes)) # ?
+                
+                show_opcodes = True
+                insn = insns[0]
+                dict_insn = {}
+                dict_key = ['addr','opcode','location','inst','semantic']
+                dict_insn['semantic'] = []
+                
+                insn_fmt = f"{{:{opcodes_len}o}}" if show_opcodes else "{}"
+                text_insn = insn_fmt.format(insn)
+                list_insn = list(filter(lambda x: x!='',text_insn.split(" "))) # ''는 리스트에서 필터링처리
+                for i in range(len(list_insn)):
+                    if i < 4:
+                        dict_insn[dict_key[i]]=list_insn[i]
+                    else:
+                        list_insn[i] = list_insn[i].replace(',','')
+                        dict_insn['semantic'].append(list_insn[i])
+                # print(dict_insn) # 주요 정보 모음
+                # ---------------
+                # 오염 여부 확인
+                inst = dict_insn['inst']
+                semantic = dict_insn['semantic']
+                # 1) 데이터 로드 및 저장 명령어(MOV, LEA(미완))
+                if inst == "mov":
+                    if semantic[0] == taint_res:
+                        global_taint_progress['total_taint'].append(dict_insn)
+                    elif semantic[1] == taint_res:
+                        taint_res = semantic[0]
+                        global_taint_progress['total_taint'].append(dict_insn)
+                
+                # 2) 연산 명령어(ADD, SUB, MUL, DIV / AND, OR, XOR)
+                if inst == "add" or inst == "sub" or inst == "mul" or inst == "div":
+                    if semantic[0] == taint_res:
+                        global_taint_progress['total_taint'].append(dict_insn)
+                    elif semantic[1] == taint_res:
+                        taint_res = semantic[0]
+                        global_taint_progress['total_taint'].append(dict_insn)
+                
+                if inst == "and" or inst == "or" or inst =="xor":
+                    if semantic[0] == taint_res:
+                        global_taint_progress['total_taint'].append(dict_insn)
+                    elif semantic[1] == taint_res:
+                        taint_res = semantic[0]
+                        global_taint_progress['total_taint'].append(dict_insn)
+                
+                # 3) 분기 및 점프 명령어(CMP / JMP, JE, JNE, JZ, JNZ)
+                if inst == "cmp":
+                    if semantic[0] == taint_res:
+                        global_taint_progress['total_taint'].append(dict_insn)
+                    elif semantic[1] == taint_res:
+                        taint_res = semantic[0]
+                        global_taint_progress['total_taint'].append(dict_insn)
+                
+                # 4) 메모리 접근 명령어(push, pop)
+                
+                # +) call명령어에 대한 매개변수(x86, x64에 따른 영향력 추가) 필요
+            
+            print(global_taint_progress['total_taint'])
+            taint.finish_taint_progress() # Last
+            
+        # ---------
+        
+        
+        
         # 1. module없을 경우 자동 설치
         import_or_install("capstone")
         
@@ -419,7 +512,8 @@ class Taint_Reg(GenericCommand):
             # 기록할 파일 존재여부 확인후 생성
             # "taint_progress"란 파일이 존재한다면 -> 진행사항 가져오기
             # 없다면 새로 생성후 frame구축
-            load_taint_progress()
+            
+            taint.load_taint_progress()
             
             # 5. status 값에 따른 기능 수행
             # [monitor_flag, set_flag, clear_flag]
@@ -427,7 +521,7 @@ class Taint_Reg(GenericCommand):
                 # clear 기능
                 # => 값에 대한 초기화 기능
                 # => 내부값을 유지할 방법이 없으니 "taint_progress"파일을 삭제후 다시 생성하여 초기화하는 방법
-                function_clear()
+                taint.function_clear()
             
             if list_status[1] == "1":
                 # set 기능
@@ -436,19 +530,62 @@ class Taint_Reg(GenericCommand):
                 length = 1
                 list_result_ds = cs_disassemble(location, length, skip=length * self.repeat_count, **kwargs) # DISASSEMBLY 핵심
                 
-                function_set(location, list_result_ds, set_flag)
+                taint.function_set(location, list_result_ds, set_flag)
                 
                 
             if list_status[0] == "1":
                 # monitoring 기능
-                function_monitoring()
+                
+                # def function_monitoring(): => hook_stop처리로 가져옴
+                # 메모 : connect할 때마다 함수가 추가되기 때문에
+                # 여러개 추가하면 같은 함수가 여러번 실행된다.
+                
+                # taint_progress파일에 있는 데이터 로드(json형태)
+                # load_taint_progress() # => 앞에 선수 조건으로 넣어서 필요없음
+                
+                # monitoring 껐다 키는 기능
+                # (gdb.events.stop) on => connect / off => disconnect
+                #gdb.events.stop.disconnect(hook_stop))
+                # 메모 : connect함수 계속 추가 가능 / disconnect함수 없는데 호출시 예외 처리
+                # disconnect사용 -> 에러발생 => 등록된 함수가 없다는 것을 의미
+                # disconnect사용 -> 정상처리 => 등록된 함수가 하나 잇었다는 의미
+                
+                # callable : 호출 가능한 함수인지 확인하는 방법
+                #print(Callable[["gdb.StopEvent"], None])
+                
+                # 현재 hook_stop함수가 등록되어있는지 확인하는 함수
+                status = taint.confirm_register_function()
+                
+                if status == "on":
+                    print("[*] 모니터링 상태는 on입니다.")
+                    print("[*] 모니터링 종료를 원하신다면 off를 입력해주세요")
+                    sel = input(">> ")
+                    if sel == "off":
+                        gdb.events.stop.disconnect(hook_stop)
+                        print()
+                        gef_print("[*] 상태가 off로 변경되었습니다.")
+                    else:
+                        gef_print("[!] 잘못된 입력입니다. 모니터링은 on상태입니다.")
+                else:
+                    # status : off 
+                    print("[*] 모니터링 상태는 off입니다.")
+                    print("[*] 모티너링 동작을 원한다면 on을 입력해주세요")
+                    sel = input(">> ")
+                    print()
+                    if sel == "on":
+                        gdb.events.stop.connect(hook_stop)
+                        print()
+                        gef_print("[*] 상태가 on으로 변경되었습니다.")
+                    else:
+                        gef_print("[!] 잘못된 입력입니다. 모니터링은 off상태입니다.")
+                
+                #gdb.execute("context")
             
         else:
             # code section 주소가 아닌 경우
             gef_print("[!] Code Section 범위의 주소입니다.")
             return
         
-        finish_taint_progress() # Last
         
         return
     
