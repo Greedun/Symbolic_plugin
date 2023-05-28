@@ -7,7 +7,6 @@ import shutil
 import gdb
 import inspect
 
-# 전역변수
 # 구조 : {'create_date': '', 'start_addr': '', 'set_REG': '', 'total_taint': []}
 global_taint_progress = {} # taint_progress에서 load
 
@@ -32,7 +31,6 @@ def import_or_install(package):
     
     import capstone
 
-# cs_assembly -> gef_to_cs_arch
 # 아키텍처에 따른 모드 값 반환
 def gef_to_cs_arch() -> Tuple[str, str, str]:
     if gef.arch.arch == "ARM":
@@ -65,10 +63,6 @@ def gef_to_cs_arch() -> Tuple[str, str, str]:
     raise ValueError
 
 def cs_disassemble(location: int, nb_insn: int, **kwargs: Any) -> Generator[Instruction, None, None]:
-    #print(f"Valr : {hex(location)} , {nb_insn} , {kwargs}")
-    """Disassemble `nb_insn` instructions after `addr` and `nb_prev` before
-    `addr` using the Capstone-Engine disassembler, if available.
-    Return an iterator of Instruction objects."""
 
     # capstone을 gef의 Instruction으로 변환
     def cs_insn_to_gef_insn(cs_insn: capstone.CsInsn) -> Instruction:
@@ -78,7 +72,6 @@ def cs_disassemble(location: int, nb_insn: int, **kwargs: Any) -> Generator[Inst
         return Instruction(cs_insn.address, loc, cs_insn.mnemonic, ops, cs_insn.bytes)
 
     arch_s, mode_s, endian_s = gef_to_cs_arch()
-    # getattr : type을 넣었을때 해당되는 int값 반환
     cs_arch: int = getattr(capstone, arch_s)
     cs_mode: int = getattr(capstone, mode_s)
     cs_endian: int = getattr(capstone, endian_s)
@@ -103,17 +96,15 @@ def cs_disassemble(location: int, nb_insn: int, **kwargs: Any) -> Generator[Inst
     code = kwargs.get("code", gef.memory.read(
         location, gef.session.pagesize - offset - 1))
 
-    # code에 
     for insn in cs.disasm(code, location):
         if skip:
             skip -= 1
             continue
         nb_insn -= 1
-        yield cs_insn_to_gef_insn(insn) # yield는 무엇인가?
+        yield cs_insn_to_gef_insn(insn)
         if nb_insn == 0:
             break
     return
-
 
 # 코드영역 주소 추출하는 코드(임시)
 def export_location_opcode_value():
@@ -123,7 +114,6 @@ def export_location_opcode_value():
         err("No address mapping information found")
         return
 
-    #print(f"start\t\tend\t\toffset\t\tperm\t\tPath")
     # code영역 주소 추출
     for entry in vmmap:
         if "/usr/lib/x86_64-linux-gnu/libc.so.6" in entry.path:
@@ -158,7 +148,6 @@ def check_location(location):
     return True
 
 def check_flag(list_flag):
-    # print : location의 기본 기능
     # [monitor_flag, set_flag, clear_flag] - 4, 2, 1
     # 순위 : clear -> set -> monitor
     # clear => TaintReg --clear
@@ -179,7 +168,7 @@ def check_flag(list_flag):
         status += "1"
     else:
         status += "0"
-    # print(status)
+
     return status
 
 def createDirectory(directory):
@@ -226,8 +215,6 @@ class Taint_function:
                 # 기존 load
                 with open("./taint_progress") as f:
                     global_taint_progress = json.load(f) # type : dict
-
-                # print(global_taint_progress)
                 
             elif confirm == 2:
                 # 삭제후 생성
@@ -273,7 +260,6 @@ class Taint_function:
         }
         
         with open("taint_progress", 'w') as f:
-            #print(frame_taint_progress)
             json.dump(frame_taint_progress, f, indent=4)
         
         gef_print("[+] Create 'taint_progress' file")
@@ -282,9 +268,6 @@ class Taint_function:
     def function_set(self, location, list_result_ds, set_flag):
         global global_taint_progress
         
-        # 지정한 REG가 현재 혹은 지정한 location에 있는지 확인하는 작업
-        # "start_addr": "", "set_REG": ""만 설정
-        # 디스어셈블리 -----------------------
         insns = [] # INSTRUCTION 클래스가 들어감
         opcodes_len = 0
         length = 1
@@ -319,10 +302,6 @@ class Taint_function:
         if exist_REG == 0:
             gef_print("[!] 오염시킬 주소에 해당 레지스터는 존재하지 않습니다.")
             return
-        
-        # global_taint_값이 유무 확인
-        # 있다면 변경 여부 확인
-        # 변경한다면 => 백업 여부 확인후 값 변경 + [] 초기화
         
         if global_taint_progress['set_REG'] != "":
             # 이미 설정된 값이 있다면 
@@ -360,7 +339,7 @@ class Taint_function:
 
     def function_clear(self):
         global global_taint_progress
-        # => 내부값을 유지할 방법이 없으니 "taint_progress"파일을 삭제후 다시 생성하여 초기화하는 방법
+        
         # "taint_progress"파일을 삭제후 다시 생성
         if os.path.isfile("taint_progress"):
             os.remove("taint_progress")
@@ -372,7 +351,7 @@ class Taint_function:
 
     def confirm_register_function(self):
         status = ''
-        # gdb.events.stop.connect(hook_stop)
+
         try:
             gdb.events.stop.disconnect(hook_stop)
             
@@ -386,18 +365,12 @@ class Taint_function:
         
         return status
 
-
-# -------------------------
-
-# (1) hook을 통해 gdb가 bp될때마다 실행되게 하는 방법을 찾아서 먼저 시도 예정
-# (2) (gdb내부에서 자동실행 안될경우) 내부 진행사항이 유지가 안되기 때문에 "taint_progress"란 파일을 토대로 진행되게 할 것
 class Taint_Reg(GenericCommand):
     
     """Dummy new command."""
     _cmdline_ = "TaintReg"
     _syntax_  = f"{_cmdline_} [location] [--set] [--monitor] [--clear]"
     
-    # location 지정 없을때 $pc에 있는 레지스터 / location 지정 있을때 location에 있는 레지스터
     @only_if_gdb_running
     @parse_arguments({("location"):"$pc"},{"--set": "", "--monitor": True, "--clear": True}) # kwarg사용시 필요, --???시 True로 초기화됨
     def do_invoke(self, _: List[str], **kwargs: Any) -> None:
@@ -440,11 +413,11 @@ class Taint_Reg(GenericCommand):
                     else:
                         list_insn[i] = list_insn[i].replace(',','')
                         dict_insn['semantic'].append(list_insn[i])
-                # print(dict_insn) # 주요 정보 모음
-                # ---------------
+                        
                 # 오염 여부 확인
                 inst = dict_insn['inst']
                 semantic = dict_insn['semantic']
+                
                 # 1) 데이터 로드 및 저장 명령어(MOV, LEA(미완))
                 if inst == "mov":
                     if semantic[0] == taint_res:
@@ -484,8 +457,6 @@ class Taint_Reg(GenericCommand):
             taint.finish_taint_progress() # Last
             
         # ---------
-        
-        
         
         # 1. module없을 경우 자동 설치
         import_or_install("capstone")
@@ -536,23 +507,6 @@ class Taint_Reg(GenericCommand):
             if list_status[0] == "1":
                 # monitoring 기능
                 
-                # def function_monitoring(): => hook_stop처리로 가져옴
-                # 메모 : connect할 때마다 함수가 추가되기 때문에
-                # 여러개 추가하면 같은 함수가 여러번 실행된다.
-                
-                # taint_progress파일에 있는 데이터 로드(json형태)
-                # load_taint_progress() # => 앞에 선수 조건으로 넣어서 필요없음
-                
-                # monitoring 껐다 키는 기능
-                # (gdb.events.stop) on => connect / off => disconnect
-                #gdb.events.stop.disconnect(hook_stop))
-                # 메모 : connect함수 계속 추가 가능 / disconnect함수 없는데 호출시 예외 처리
-                # disconnect사용 -> 에러발생 => 등록된 함수가 없다는 것을 의미
-                # disconnect사용 -> 정상처리 => 등록된 함수가 하나 잇었다는 의미
-                
-                # callable : 호출 가능한 함수인지 확인하는 방법
-                #print(Callable[["gdb.StopEvent"], None])
-                
                 # 현재 hook_stop함수가 등록되어있는지 확인하는 함수
                 status = taint.confirm_register_function()
                 
@@ -593,7 +547,6 @@ class Taint_Reg(GenericCommand):
         # => 오염이 됬다면 GEF_PRINTR같은것으로 자동 호출
         # (+) 추가기능 : --monitor, --print, --clear같은 기능들은 주요 기능 실행 전에 여기서 체크후 기능실행
         
-    
 # 명령어 : clear용도
 class clear(GenericCommand):
     """Dummy new command."""
@@ -608,43 +561,3 @@ class clear(GenericCommand):
 
 register_external_command(Taint_Reg())
 register_external_command(clear())
-
-'''
-[알고리즘 구상도]
-elf 분석 라이브러리 : pylibelf(X)
-=> gefaddrspace존재
-
-----
-1. elf구조를 통한 주소, 어셈블리어 추출
-=> 사전 작업 + 내부 기능으로 해결
-=> capstone.py 참고
-
-2. 오염 분석할 주소 및 레지스터 지정
-
-3. (ni, si중) 실행되면서 만약 레지스터가 오염된다면 alert
-=> 오염되는 기준을 정할 레지스터
-=> MOV, CALL, LEA, CMP, TEST, 산술 연산자, RET, MOV, PUSH, POP, JUMP
-<si는 무시하되 만약 매개변수로 오염변수가 들어간다면 반환값이 오염된다고 가정>
-(1) 매 실행마다 적용되는 방법을 찾기
-=> 만약 못찾는다면 비동기로 뒤에서 계속 실행하여 주소(pc)가 달라졌을때 반영하게 된다.
-(2) (1)이 될 떄 미리 지정한 영향받는 어셈블리어가 들어있을 경우
-레지스터 오염 추적 여부를 확인하고 오염됬을시 확인한다.
-=> (?) 오염 추적를 어떻게 따라갈껀지 구상해야함
-
-
-(+) 설정한 값 초기화하는 기능
-(+) 현재 진행중인 오염 상황을 출력하는 기능
-'''
-
-'''
-[추가 기능]
-—set “레지스터” => 오염될 레지스터 설정
-<기본값 : None>
-
-—monitor True=> 오염이 발생될 때 gef_print, gef_info발생 (백그라운드로 계속 확인) / False는 종료
-=> 쓰레드로 돌릴 예정
-
-—print => 오염된 사양 다 출력
-
-—clear => 기존에 오염과 지정한 레지스터 다 삭제
-'''
