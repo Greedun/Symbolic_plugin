@@ -1,2 +1,4 @@
 script
 .DS_Store
+log
+taint_progress

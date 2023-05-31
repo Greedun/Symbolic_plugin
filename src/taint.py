@@ -195,7 +195,7 @@ class Taint_function:
         global global_taint_progress
         # (check) taint_progress파일이 있는지 확인 없다면 생성
         if not os.path.exists("taint_progress"):
-            make_taint_progress()
+            self.make_taint_progress()
             
         else:
             # load
@@ -220,7 +220,7 @@ class Taint_function:
                 # 삭제후 생성
                 if os.path.isfile("taint_progress"):
                     os.remove("taint_progress")
-                    make_taint_progress()
+                    self.make_taint_progress()
                     
                 else:
                     print("[!] taint_progress파일이 존재하지 않습니다.")
@@ -239,7 +239,7 @@ class Taint_function:
                 os.remove("taint_progress")
                 
                 # progress파일 새로 생성
-                make_taint_progress()
+                self.make_taint_progress()
                 
                 gef_print(f"{change_name} 파일로 백업되었습니다.")
                 
@@ -322,7 +322,7 @@ class Taint_function:
                 os.remove("taint_progress")
                 
                 # progress파일 새로 생성
-                make_taint_progress()
+                self.make_taint_progress()
                 
                 gef_print(f"{change_name} 파일로 백업되었습니다.")
             else:
@@ -343,7 +343,7 @@ class Taint_function:
         # "taint_progress"파일을 삭제후 다시 생성
         if os.path.isfile("taint_progress"):
             os.remove("taint_progress")
-            make_taint_progress()
+            self.make_taint_progress()
         else:
             print("[!] taint_progress파일이 존재하지 않습니다.")
         
@@ -453,7 +453,12 @@ class Taint_Reg(GenericCommand):
                 
                 # +) call명령어에 대한 매개변수(x86, x64에 따른 영향력 추가) 필요
             
-            print(global_taint_progress['total_taint'])
+            # 오염 명령어 출력
+            for i in range(len(global_taint_progress['total_taint'])):
+                _taint = global_taint_progress['total_taint'][i]
+                _semantic = " ".join(_taint['semantic'])
+                print(f"#{i} : {inst} {_semantic}")
+            
             taint.finish_taint_progress() # Last
             
         # ---------
